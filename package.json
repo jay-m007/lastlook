@@ -1,0 +1,18 @@
+{
+  "name": "lastlook",
+  "version": "0.1.0",
+  "description": "A shell safety net: reads a command before it runs, works out what it would really touch, and stops the ones you cannot undo. Explanations come from a local Ollama model; the decision never does.",
+  "type": "module",
+  "bin": { "lastlook": "src/cli.ts" },
+  "scripts": {
+    "test": "node --test --test-concurrency=1 --test-timeout=30000 \"test/**/*.test.ts\"",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "eval": "node eval/run.ts"
+  },
+  "engines": { "node": ">=22.18" },
+  "keywords": ["shell", "safety", "bash", "zsh", "ollama", "llm", "cli", "rm-rf", "devtools"],
+  "author": "Jay Maurya",
+  "license": "MIT",
+  "repository": { "type": "git", "url": "https://github.com/jay-m007/lastlook.git" },
+  "devDependencies": { "@types/node": "^22.18.0", "typescript": "5.9.3" }
+}
