@@ -133,7 +133,7 @@ lastlook has no rules for.
 ## Development
 
 ```
-npm test          # 89 tests, no network and no model needed
+npm test          # 90 tests, no network and no model needed
 npm run typecheck
 npm run eval      # needs Ollama; measures the model on your machine
 ```

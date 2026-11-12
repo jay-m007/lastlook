@@ -304,3 +304,11 @@ test("the review stays quick on a big folder", () => {
   const r = look("rm -rf .", root);
   assert.ok(r.ms < 2000, `review took ${r.ms} ms`);
 });
+
+test("a plural kubernetes resource reads correctly after \"every\"", () => {
+  const root = makeRepo({});
+  for (const [resource, expected] of [["pods", "every pod in"], ["deployments", "every deployment in"], ["ingresses", "every ingress in"], ["policies", "every policy in"]] as const) {
+    const r = look(`kubectl delete ${resource} --all`, root);
+    assert.match(find(r, "kubectl.delete")!.headline, new RegExp(expected.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), `${resource} read wrongly`);
+  }
+});

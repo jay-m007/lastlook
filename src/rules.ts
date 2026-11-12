@@ -61,6 +61,14 @@ export function splitArgs(argv: Word[], optsWithValues: Set<string> = new Set())
   return { flags, operands };
 }
 
+/** kubectl takes plural resource names, which read wrongly after "every": every pods. */
+function singular(word: string): string {
+  if (/(ses|xes|zes|ches|shes)$/.test(word)) return word.slice(0, -2);
+  if (/ies$/.test(word)) return word.slice(0, -3) + "y";
+  if (/ss$|us$|s$/.test(word) && !/ss$|us$/.test(word)) return word.slice(0, -1);
+  return word;
+}
+
 const flagValue = (flags: Set<string>, name: string): string | null => {
   for (const f of flags) if (f.startsWith(name + "=")) return f.slice(name.length + 1);
   return null;
@@ -368,7 +376,7 @@ const kubectlRule: Rule = {
       const all = i.flags.has("--all") || i.operands.some((w) => w.text === "--all");
       out.push({
         rule: "kubectl.delete", severity: prod || all ? "stop" : "confirm", program: i.program,
-        headline: all ? `This deletes every ${i.operands[1]?.text ?? "object"} in the namespace.` : `This deletes ${i.operands.slice(1).map((w) => w.text).join(" ") || "cluster objects"}.`,
+        headline: all ? `This deletes every ${singular(i.operands[1]?.text ?? "object")} in the namespace.` : `This deletes ${i.operands.slice(1).map((w) => w.text).join(" ") || "cluster objects"}.`,
         facts: [...where, ...(prod ? ["the cluster name says production"] : []), ...(all ? ["--all means every object of that kind, not just yours"] : [])],
         recovery: "if the objects came from a manifest in git you can re-apply it; anything with data attached does not come back",
         alternative: "add --dry-run=client to see the list first",
