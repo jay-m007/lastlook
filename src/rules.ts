@@ -9,7 +9,7 @@ import type { SimpleCommand, Word } from "./shell.ts";
 import { programName, unwrap } from "./shell.ts";
 import { expand, survey, isInside, describePlace, shorten } from "./paths.ts";
 import type { Context } from "./context.ts";
-import { unsavedAmong, uncommittedAmong, trackedCount } from "./context.ts";
+import { unsavedAmong, uncommittedAmong, trackedCount, ignoredUnder } from "./context.ts";
 import type { GitContext } from "./context.ts";
 import type { Finding } from "./findings.ts";
 import { plural, bytes } from "./findings.ts";
@@ -91,6 +91,26 @@ function countUnder(g: GitContext, rels: string[]): number {
   if (!rels.length) return 0;
   const s = survey(rels.map((r) => join(g.root, r.replace(/\/$/, ""))), null);
   return s.files;
+}
+
+/**
+ * Ignored files fall into two groups and the difference is the whole point: one group is a command
+ * away from coming back, the other is gone. Anything not recognisably reinstallable is treated as
+ * the second kind, because guessing wrong in that direction is the cheap mistake.
+ */
+const REINSTALLABLE = /(^|\/)(node_modules|bower_components|vendor|\.venv|venv|__pycache__|\.pytest_cache|\.mypy_cache|target|build|dist|out|\.next|\.nuxt|\.svelte-kit|\.turbo|\.parcel-cache|coverage|\.nyc_output|\.cache|\.gradle|\.m2|Pods|DerivedData|\.terraform|tmp|temp)(\/|$)|\.(pyc|pyo|class|o|obj|log|map|tsbuildinfo)$/i;
+
+const PRECIOUS = /(^|\/)(\.env[^/]*|\.envrc|secrets?[^/]*|credentials?[^/]*|data|uploads?|storage|media|backups?|dumps?|db|database)(\/|$)|\.(sqlite3?|db|sql|dump|pem|key|p12|pfx|keystore|jks)$/i;
+
+/** Splits ignored files into the ones that can be rebuilt and the ones that cannot. */
+function partitionIgnored(paths: string[]): { rebuildable: string[]; precious: string[]; unknown: string[] } {
+  const rebuildable: string[] = [], precious: string[] = [], unknown: string[] = [];
+  for (const p of paths) {
+    if (PRECIOUS.test(p)) precious.push(p);
+    else if (REINSTALLABLE.test(p)) rebuildable.push(p);
+    else unknown.push(p);
+  }
+  return { rebuildable, precious, unknown };
 }
 
 /** The option words as the person typed them, for quoting a command back at them. */
@@ -187,10 +207,39 @@ const rm: Rule = {
           recovery: null,
         });
       }
+      // Ignored files: git status never mentioned them, so nothing above has accounted for them.
+      const ignored = ignoredUnder(g, known, i.ctx.cwd);
+      const reportedAsIgnored = ignored.length > 0;
+      if (ignored.length) {
+        const { rebuildable, precious, unknown } = partitionIgnored(ignored);
+        const atRisk = [...precious, ...unknown];
+        if (atRisk.length) {
+          out.push({
+            rule: "rm.ignored-precious", severity: precious.length ? "confirm" : atRisk.length > 20 ? "confirm" : "note", program: i.program,
+            headline: `${plural(atRisk.length, "file")} ${atRisk.length === 1 ? "is" : "are"} ignored by git, so git has never had a copy of ${atRisk.length === 1 ? "it" : "them"}.`,
+            facts: [
+              ...atRisk.slice(0, 5).map((p) => `ignored by .gitignore: ${p}`),
+              ...(atRisk.length > 5 ? [`and ${atRisk.length - 5} more`] : []),
+              ...(precious.length ? ["an ignored file is usually local configuration or data, which is exactly the kind that cannot be fetched again"] : []),
+              ...(rebuildable.length ? [`${plural(rebuildable.length, "other ignored file")} look installable (${[...new Set(rebuildable.map((p) => p.split("/")[0]))].slice(0, 3).join(", ")})`] : []),
+            ],
+            recovery: null,
+            alternative: `git status --ignored -- ${expansions.map((e) => e.shown).slice(0, 2).join(" ")} lists them all first`,
+          });
+        } else if (rebuildable.length) {
+          out.push({
+            rule: "rm.ignored-rebuildable", severity: "note", program: i.program,
+            headline: `${plural(rebuildable.length, "file")} ${rebuildable.length === 1 ? "is" : "are"} ignored by git but look installable.`,
+            facts: [`under ${[...new Set(rebuildable.map((p) => p.split("/")[0]))].slice(0, 3).join(", ")}`, "git has no copy, but a build or install command brings these back"],
+            recovery: "reinstall or rebuild",
+          });
+        }
+      }
+
       if (tracked !== null && tracked > 0 && !unsaved.modified.length) {
         out.push({ rule: "rm.tracked", severity: "note", program: i.program, headline: `${plural(tracked, "file")} ${tracked === 1 ? "is" : "are"} committed, so ${tracked === 1 ? "it" : "they"} can be restored.`, facts, recovery: `git checkout -- ${expansions.map((e) => e.shown).slice(0, 3).join(" ")}` });
       }
-      if (tracked === 0 && !unsaved.modified.length && !unsaved.untracked.length && s.files > 0) {
+      if (tracked === 0 && !unsaved.modified.length && !unsaved.untracked.length && s.files > 0 && !reportedAsIgnored) {
         out.push({ rule: "rm.not-in-git", severity: s.files > 50 ? "confirm" : "note", program: i.program, headline: `${plural(s.files, "file")} ${s.files === 1 ? "is" : "are"} not in git at all.`, facts, recovery: null });
       }
     } else if (s.files > 0 && !out.length) {

@@ -56,7 +56,7 @@ kubeconfig; it never guesses.
 
 | Area | What it works out |
 |---|---|
-| `rm`, `rmdir` | real file counts behind a glob, paths outside the repo, files with uncommitted changes, files git has never seen, symlinks, and the unset-variable case where `rm -rf "$BUILD/"` becomes `rm -rf /` |
+| `rm`, `rmdir` | real file counts behind a glob, paths outside the repo, files with uncommitted changes, files git has never seen, **gitignored files**, symlinks, and the unset-variable case where `rm -rf "$BUILD/"` becomes `rm -rf /` |
 | `git` | force push with and without a lease, whether the branch is the default one, whether there is an upstream to compare against at all, `reset --hard` against a dirty tree, what `clean -fdx` would take, amending a commit that is already pushed, `filter-branch`, `gc --prune=now`, stash drops |
 | databases | `DELETE` or `UPDATE` with no `WHERE`, `DROP`, `TRUNCATE`, `FLUSHALL`, and whether the host in your environment looks like production (the password is never shown or logged) |
 | Kubernetes | `delete`, `delete --all`, `scale --replicas=0`, `drain`, `helm uninstall`, named with the cluster and namespace that are actually current |
@@ -69,6 +69,13 @@ kubeconfig; it never guesses.
 | anything else | `find -delete`, `sed -i` without a backup, `> file` truncating a file that has unsaved work, `npm publish`, `rsync --delete`, `ssh host "rm -rf …"`, `kill 1` |
 
 Run `lastlook rules` to list them, and `lastlook check -v -- '<command>'` to see rule ids and timings.
+
+**Gitignored files are the blind spot worth knowing about.** `git status` does not list them, so to
+anything that only reads git status, deleting a gitignored `.env` looks exactly as safe as deleting
+`node_modules`. lastlook asks git for them separately and sorts them: `node_modules`, `dist`,
+`target`, `.venv` and friends are a note that says they can be reinstalled, while `.env`, `data/`,
+`*.sqlite`, `*.pem` and anything it does not recognise are a check that names the files, because
+those are gone. Anything unrecognised is treated as the second kind.
 
 Three levels: a **note** prints and gets out of the way, a **check** asks, and a **stop** makes you
 type the word `run`. A command with nothing to flag prints nothing at all — that is the common case,
@@ -133,7 +140,7 @@ lastlook has no rules for.
 ## Development
 
 ```
-npm test          # 90 tests, no network and no model needed
+npm test          # 94 tests, no network and no model needed
 npm run typecheck
 npm run eval      # needs Ollama; measures the model on your machine
 ```

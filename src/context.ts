@@ -146,6 +146,19 @@ export function uncommittedAmong(g: GitContext, absolutePaths: string[]): string
   return [...u.modified, ...u.untracked];
 }
 
+/**
+ * Files under these paths that .gitignore excludes.
+ *
+ * This is the blind spot that makes "it is all in git" wrong: an ignored file is not listed by
+ * git status as untracked, so without asking git directly, deleting a gitignored .env or a
+ * gitignored data folder looks exactly as safe as deleting node_modules.
+ */
+export function ignoredUnder(g: GitContext, absolutePaths: string[], cwd: string): string[] {
+  if (!absolutePaths.length) return [];
+  const out = gitRaw(g.root, ["ls-files", "--others", "--ignored", "--exclude-standard", "-z", "--", ...absolutePaths.slice(0, 200)], cwd);
+  return out ? out.split("\0").filter(Boolean) : [];
+}
+
 /** Whether git knows about these paths at all. Asks git directly so .gitignore is respected. */
 export function trackedCount(g: GitContext, absolutePaths: string[], cwd: string): number | null {
   if (!absolutePaths.length) return 0;

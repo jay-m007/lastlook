@@ -312,3 +312,49 @@ test("a plural kubernetes resource reads correctly after \"every\"", () => {
     assert.match(find(r, "kubectl.delete")!.headline, new RegExp(expected.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), `${resource} read wrongly`);
   }
 });
+
+test("deleting a gitignored .env or data folder is a check, because git never had a copy", () => {
+  const root = makeRepo({
+    committed: { "app.ts": "x", ".gitignore": "node_modules/\n.env\ndata/\n*.sqlite\n" },
+    untracked: { ".env": "SECRET=x", "data/customers.csv": "rows", "local.sqlite": "db" },
+  });
+  const r = look("rm -rf .env data local.sqlite", root);
+  assert.equal(r.severity, "confirm");
+  const f = find(r, "rm.ignored-precious")!;
+  assert.match(f.headline, /ignored by git/);
+  assert.match(f.facts.join(" "), /\.env/);
+  assert.match(f.facts.join(" "), /customers\.csv/);
+  assert.equal(f.recovery, null);
+  assert.match(f.alternative!, /git status --ignored/);
+});
+
+test("deleting gitignored build output is only a note, and says it can be reinstalled", () => {
+  const root = makeRepo({
+    committed: { "app.ts": "x", ".gitignore": "node_modules/\ndist/\n" },
+    untracked: Object.fromEntries([...Array(12)].map((_, k) => [`node_modules/pkg${k}/index.js`, "m"])),
+  });
+  const r = look("rm -rf node_modules", root);
+  assert.equal(r.severity, "note");
+  const f = find(r, "rm.ignored-rebuildable")!;
+  assert.match(f.headline, /look installable/);
+  assert.match(f.recovery!, /reinstall|rebuild/);
+});
+
+test("a mix of build output and real data warns about the data and mentions the rest", () => {
+  const root = makeRepo({
+    committed: { "app.ts": "x", ".gitignore": "node_modules/\n.env\n" },
+    untracked: { ".env": "SECRET=x", "node_modules/a/i.js": "m", "node_modules/b/i.js": "m" },
+  });
+  const r = look("rm -rf .env node_modules", root);
+  const f = find(r, "rm.ignored-precious")!;
+  assert.match(f.headline, /1 file is ignored by git/);
+  assert.match(f.facts.join(" "), /other ignored file/);
+  assert.match(f.facts.join(" "), /node_modules/);
+});
+
+test("an ignored file is reported once, not twice", () => {
+  const root = makeRepo({ committed: { ".gitignore": "secret.txt\n" }, untracked: { "secret.txt": "x" } });
+  const r = look("rm secret.txt", root);
+  assert.ok(!ruleIds(r).includes("rm.not-in-git"), `reported twice: ${ruleIds(r).join(", ")}`);
+  assert.ok(ruleIds(r).includes("rm.ignored-precious") || ruleIds(r).includes("rm.ignored-rebuildable"));
+});
